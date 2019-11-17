@@ -1,7 +1,7 @@
 # gid
 double buffer generation id
 
-##### Example 
+# Example 
 
 package main
 
@@ -83,7 +83,7 @@ func main() {
 
 }
 
-##### Run Result
+# Run Result
 
 go routine 01 2019-11-17 23:00:12.23975 +0800 CST m=+3.086219504 NextId = 102078
 
