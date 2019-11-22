@@ -18,48 +18,62 @@ import (
 
 )
 
-type IdData struct {
+type IdProvider struct {
+
+    snowflakeNode *gid.SnowflakeNode
 
 }
 
-// custom extend get next id 
+func NewIdProvider(snowflakeNode *gid.SnowflakeNode) *IdProvider {
 
-func (s *IdData) GetNextId() uint64 {
+    return &IdProvider{
 
-    time.Sleep(3 * time.Second)
+        snowflakeNode: snowflakeNode,
 
-    return 1001
-}
-
-// custom extend load prev id 
-
-// example: load for redis
-
-func (s *IdData) LoadPrevId() uint64 {
-
-    return 1000
+    }
 
 }
 
-// custom extend save prev id 
+func (s *IdProvider) GetNextId() int64 {
 
-// example: save for redis
-
-func (s *IdData) SavePrevId(prevId uint64) {
+    return s.snowflakeNode.GetId()
 
 }
+
+func (s *IdProvider) LoadPrevId() int64 {
+
+    return 0
+
+}
+
+func (s *IdProvider) SavePrevId(prevId int64) {
+
+    log.Printf("SavePrevId: %d", prevId)
+
+}
+
 
 func main() {
 
-    idData := new(IdData)
+    snowflake := gid.NewSnowflake()
 
-    idGeneration := gid.NewGid(10, 5)
+    snowflake.SetStartTimestamp(1571145696789)
 
-    //idGeneration.SetSource(idData)
+    snowflake.SetNodeBits(10)
 
-    idGeneration.SetStore(idData)
+    snowflake.SetSeqBits(12)
 
-    idGeneration.Start()
+    idProvider := NewIdProvider(snowflake.GetNode(1))
+
+    idGenerator := gid.NewIdGenerator()
+
+    idGenerator.SetCount(5000)
+
+    idGenerator.SetSource(idProvider)
+
+    idGenerator.SetStore(idProvider)
+
+    idGenerator.Launch()
 
     for i := 0; i < 2; i++ {
 

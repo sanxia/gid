@@ -5,7 +5,7 @@ import (
 )
 
 /* ================================================================================
- * gid
+ * id generator buffer
  * qq group: 582452342
  * email   : 2091938785@qq.com
  * author  : 美丽的地球啊 - mliu
@@ -16,31 +16,31 @@ type (
 	 * id data source interface
 	 * ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ */
 	IIdSource interface {
-		GetNextId() uint64
+		GetNextId() int64
 	}
 
 	/* ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 	 * id store interface
 	 * ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ */
 	IIdStore interface {
-		LoadPrevId() uint64
-		SavePrevId(id uint64)
+		LoadPrevId() int64
+		SavePrevId(id int64)
 	}
 )
 
 type (
 	/* ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-	 * gid data struct
+	 * IdGenerator data struct
 	 * ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ */
-	gid struct {
+	IdGenerator struct {
 		count          int
 		threshold      int
-		prevId         uint64
-		nextId         uint64
-		totalIndex     uint64
+		prevId         int64
+		nextId         int64
+		totalIndex     int64
 		currentIndex   int
-		frontDataChan  chan NextData
-		backDataChan   chan NextData
+		frontDataChan  chan IdData
+		backDataChan   chan IdData
 		frontCacheChan chan bool
 		backCacheChan  chan bool
 		dataSource     IIdSource
@@ -50,19 +50,30 @@ type (
 		isFront        bool
 	}
 
-	NextData struct {
-		id     uint64
-		isLast bool
+	IdData struct {
+		id     int64
+		isHead bool
+		isTail bool
 	}
 )
 
 /* ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
- * instance gid data struct
+ * instance IdGenerator data struct
  * ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ */
-func NewGid(count, threshold int) *gid {
-	generationId := &gid{
-		frontDataChan:  make(chan NextData, count),
-		backDataChan:   make(chan NextData, count),
+func NewIdGenerator(args ...int) *IdGenerator {
+	count := 1000
+	if len(args) > 0 {
+		count = args[0]
+	}
+
+	threshold := int(float64(count) * (float64(10) / float64(100)))
+	if threshold <= 0 {
+		threshold = 1
+	}
+
+	generationId := &IdGenerator{
+		frontDataChan:  make(chan IdData, count),
+		backDataChan:   make(chan IdData, count),
 		frontCacheChan: make(chan bool),
 		backCacheChan:  make(chan bool),
 		count:          count,
@@ -78,7 +89,7 @@ func NewGid(count, threshold int) *gid {
 /* ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
  * cache chan listen
  * ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ */
-func (s *gid) init() {
+func (s *IdGenerator) init() {
 	go func() {
 		for {
 			select {
@@ -92,9 +103,9 @@ func (s *gid) init() {
 }
 
 /* ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
- * load id data
+ * launch data
  * ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ */
-func (s *gid) Start() {
+func (s *IdGenerator) Launch() {
 	if s.dataStore != nil {
 		s.prevId = s.dataStore.LoadPrevId()
 	}
@@ -105,39 +116,58 @@ func (s *gid) Start() {
 /* ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
  * get next id
  * ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ */
-func (s *gid) GetNextId() uint64 {
+func (s *IdGenerator) GetNextId() int64 {
 	s.idMux.Lock()
 	defer s.idMux.Unlock()
 
-	nextId := s.getNextId()
-	for nextId <= s.prevId {
-		nextId = s.getNextId()
+	nextData := s.getNextData()
+	for nextData.id <= s.prevId {
+		nextData = s.getNextData()
 	}
 
-	s.nextId = nextId
+	s.nextId = nextData.id
+
+	//switch buffer
+	if nextData.isTail {
+		s.currentIndex = 0
+		s.isFront = !s.isFront
+	}
 
 	return s.nextId
 }
 
 /* ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ * set count
+ * ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ */
+func (s *IdGenerator) SetCount(count int) {
+	if count <= 0 {
+		count = 1000
+	}
+
+	s.count = count
+
+	s.threshold = int(float64(count) * (float64(10) / float64(100)))
+}
+
+/* ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
  * set IIdSource interface
  * ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ */
-func (s *gid) SetSource(dataSource IIdSource) {
+func (s *IdGenerator) SetSource(dataSource IIdSource) {
 	s.dataSource = dataSource
 }
 
 /* ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
  * set IIdStore interface
  * ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ */
-func (s *gid) SetStore(dataStore IIdStore) {
+func (s *IdGenerator) SetStore(dataStore IIdStore) {
 	s.dataStore = dataStore
 }
 
 /* ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
  * getNextId
  * ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ */
-func (s *gid) getNextId() uint64 {
-	var nextData NextData
+func (s *IdGenerator) getNextData() IdData {
+	var nextData IdData
 
 	if s.isFront {
 		select {
@@ -159,44 +189,47 @@ func (s *gid) getNextId() uint64 {
 		}
 	}
 
-	if nextData.isLast {
-		s.currentIndex = 0
-		s.isFront = !s.isFront
-
-		if s.dataStore != nil {
-			s.prevId = s.dataStore.LoadPrevId()
-			if nextData.id > s.prevId {
-				s.dataStore.SavePrevId(nextData.id)
-			}
-		}
-	}
-
-	return nextData.id
+	return nextData
 }
 
 /* ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
  * loadData
  * ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ */
-func (s *gid) loadData(dataChan chan NextData) {
+func (s *IdGenerator) loadData(dataChan chan IdData) {
 	s.dataMux.Lock()
 	defer s.dataMux.Unlock()
 
 	for i := 0; i < s.count; i++ {
 		s.totalIndex = s.totalIndex + 1
 
-		isLast := false
-		if i == s.count-1 {
-			isLast = true
+		isHead := false
+		isTail := false
+		if i == 0 {
+			isHead = true
+		} else if i == s.count-1 {
+			isTail = true
 		}
 
+		//next data
 		nextId := s.totalIndex
 		if s.dataSource != nil {
 			nextId = s.dataSource.GetNextId()
 		}
 
-		nextData := NextData{
+		nextData := IdData{
 			id:     nextId,
-			isLast: isLast,
+			isHead: isHead,
+			isTail: isTail,
+		}
+
+		//report store
+		if isTail {
+			if s.dataStore != nil {
+				s.prevId = s.dataStore.LoadPrevId()
+				if nextData.id > s.prevId {
+					s.dataStore.SavePrevId(nextData.id)
+				}
+			}
 		}
 
 		dataChan <- nextData
