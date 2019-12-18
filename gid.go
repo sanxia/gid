@@ -16,7 +16,7 @@ type (
 	 * id data source interface
 	 * ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ */
 	IIdSource interface {
-		GetNextId() int64
+		NextId() int64
 	}
 
 	/* ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -116,7 +116,7 @@ func (s *IdGenerator) Launch() {
 /* ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
  * get next id
  * ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ */
-func (s *IdGenerator) GetNextId() int64 {
+func (s *IdGenerator) NextId() int64 {
 	s.idMux.Lock()
 	defer s.idMux.Unlock()
 
@@ -213,7 +213,7 @@ func (s *IdGenerator) loadData(dataChan chan IdData) {
 		//next data
 		nextId := s.totalIndex
 		if s.dataSource != nil {
-			nextId = s.dataSource.GetNextId()
+			nextId = s.dataSource.NextId()
 		}
 
 		nextData := IdData{
