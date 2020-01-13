@@ -61,7 +61,7 @@ type (
  * instance IdGenerator data struct
  * ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ */
 func NewIdGenerator(args ...int) *IdGenerator {
-	count := 1000
+	count := 10000
 	if len(args) > 0 {
 		count = args[0]
 	}
